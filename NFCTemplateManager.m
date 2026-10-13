@@ -2,38 +2,75 @@
 
 static NSString *const kNFCTemplatesKey = @"FakeNFC_SavedTemplates";
 
+// ─────────────────────────────────────────────────────────────────────────────
+#pragma mark - NFCTemplateModel
+// ─────────────────────────────────────────────────────────────────────────────
+
 @implementation NFCTemplateModel
 
 - (instancetype)initWithTitle:(NSString *)title value:(NSString *)value type:(NSInteger)type {
+    return [self initWithTitle:title value:value type:type tagConfig:nil];
+}
+
+- (instancetype)initWithTitle:(NSString *)title value:(NSString *)value type:(NSInteger)type tagConfig:(NFCTagConfig *)tagConfig {
     self = [super init];
     if (self) {
         _templateId = [[NSUUID UUID] UUIDString];
-        _title = [title copy] ?: @"";
-        _value = [value copy] ?: @"";
-        _type = type;
+        _title      = [title copy] ?: @"";
+        _value      = [value copy] ?: @"";
+        _type       = type;
+        _tagConfig  = tagConfig ? [tagConfig copy] : nil;
     }
     return self;
 }
 
 - (NSDictionary *)toDictionary {
-    return @{
-        @"id": self.templateId ?: @"",
-        @"title": self.title ?: @"",
-        @"value": self.value ?: @"",
-        @"type": @(self.type)
-    };
+    NSMutableDictionary *d = [@{
+        @"id"    : self.templateId ?: @"",
+        @"title" : self.title      ?: @"",
+        @"value" : self.value      ?: @"",
+        @"type"  : @(self.type),
+    } mutableCopy];
+
+    if (self.tagConfig) {
+        d[@"tagConfig"] = @{
+            @"tagType"           : self.tagConfig.tagType           ?: @"Unknown",
+            @"technology"        : self.tagConfig.technology        ?: @"Unknown",
+            @"serialNumber"      : self.tagConfig.serialNumber      ?: @"Unknown",
+            @"historicalBytesHex": self.tagConfig.historicalBytesHex ?: @"",
+            @"isWritable"        : @(self.tagConfig.isWritable),
+        };
+    }
+    return [d copy];
 }
 
 + (instancetype)fromDictionary:(NSDictionary *)dict {
-    NFCTemplateModel *model = [[NFCTemplateModel alloc] init];
-    model.templateId = dict[@"id"] ?: [[NSUUID UUID] UUIDString];
-    model.title = dict[@"title"] ?: @"";
-    model.value = dict[@"value"] ?: @"";
-    model.type = [dict[@"type"] integerValue];
-    return model;
+    if (![dict isKindOfClass:[NSDictionary class]]) return nil;
+
+    NFCTemplateModel *m = [[NFCTemplateModel alloc] init];
+    m.templateId = dict[@"id"]    ?: [[NSUUID UUID] UUIDString];
+    m.title      = dict[@"title"] ?: @"";
+    m.value      = dict[@"value"] ?: @"";
+    m.type       = [dict[@"type"] integerValue];
+
+    NSDictionary *cfgDict = dict[@"tagConfig"];
+    if ([cfgDict isKindOfClass:[NSDictionary class]]) {
+        NFCTagConfig *cfg        = [[NFCTagConfig alloc] init];
+        cfg.tagType              = cfgDict[@"tagType"]            ?: @"Unknown";
+        cfg.technology           = cfgDict[@"technology"]         ?: @"Unknown";
+        cfg.serialNumber         = cfgDict[@"serialNumber"]       ?: @"Unknown";
+        cfg.historicalBytesHex   = cfgDict[@"historicalBytesHex"] ?: @"";
+        cfg.isWritable           = [cfgDict[@"isWritable"] boolValue];
+        m.tagConfig = cfg;
+    }
+    return m;
 }
 
 @end
+
+// ─────────────────────────────────────────────────────────────────────────────
+#pragma mark - NFCTemplateManager
+// ─────────────────────────────────────────────────────────────────────────────
 
 @interface NFCTemplateManager ()
 @property(nonatomic, strong) NSMutableArray<NFCTemplateModel *> *templatesList;
@@ -64,18 +101,27 @@ static NSString *const kNFCTemplatesKey = @"FakeNFC_SavedTemplates";
     [self.templatesList removeAllObjects];
     if ([saved isKindOfClass:[NSArray class]] && saved.count > 0) {
         for (NSDictionary *dict in saved) {
-            if ([dict isKindOfClass:[NSDictionary class]]) {
-                [self.templatesList addObject:[NFCTemplateModel fromDictionary:dict]];
-            }
+            NFCTemplateModel *m = [NFCTemplateModel fromDictionary:dict];
+            if (m) [self.templatesList addObject:m];
         }
     } else {
-        // Mẫu tiếng Việt có dấu mặc định
-        NFCTemplateModel *m1 = [[NFCTemplateModel alloc] initWithTitle:@"Genshin Impact Wiki" value:@"https://genshin-impact.fandom.com/vi/wiki/Nhân_Vật" type:1];
-        NFCTemplateModel *m2 = [[NFCTemplateModel alloc] initWithTitle:@"Thẻ sinh viên" value:@"MSSV: 20261012 - Họ tên: Nguyễn Văn A" type:0];
-        NFCTemplateModel *m3 = [[NFCTemplateModel alloc] initWithTitle:@"Google Tìm Kiếm" value:@"https://google.com" type:1];
-        [self.templatesList addObject:m1];
-        [self.templatesList addObject:m2];
-        [self.templatesList addObject:m3];
+        // Mẫu mặc định có sẵn khi cài lần đầu
+        NFCTemplateModel *m1 = [[NFCTemplateModel alloc]
+            initWithTitle:@"Genshin Impact Wiki"
+                    value:@"https://genshin-impact.fandom.com/vi/wiki/Nhân_Vật"
+                     type:1
+                tagConfig:[NFCTagConfig defaultConfig]];
+        NFCTemplateModel *m2 = [[NFCTemplateModel alloc]
+            initWithTitle:@"Thẻ sinh viên"
+                    value:@"MSSV: 20261012 - Họ tên: Nguyễn Văn A"
+                     type:0
+                tagConfig:[NFCTagConfig defaultConfig]];
+        NFCTemplateModel *m3 = [[NFCTemplateModel alloc]
+            initWithTitle:@"Google"
+                    value:@"https://google.com"
+                     type:1
+                tagConfig:[NFCTagConfig defaultConfig]];
+        [self.templatesList addObjectsFromArray:@[m1, m2, m3]];
         [self saveTemplates];
     }
 }
@@ -112,10 +158,10 @@ static NSString *const kNFCTemplatesKey = @"FakeNFC_SavedTemplates";
 
 - (void)deleteTemplateWithId:(NSString *)templateId {
     if (!templateId) return;
-    NSIndexSet *toRemove = [self.templatesList indexesOfObjectsPassingTest:^BOOL(NFCTemplateModel *obj, NSUInteger idx, BOOL *stop) {
+    NSIndexSet *idx = [self.templatesList indexesOfObjectsPassingTest:^BOOL(NFCTemplateModel *obj, NSUInteger i, BOOL *stop) {
         return [obj.templateId isEqualToString:templateId];
     }];
-    [self.templatesList removeObjectsAtIndexes:toRemove];
+    [self.templatesList removeObjectsAtIndexes:idx];
     [self saveTemplates];
 }
 

@@ -3,7 +3,8 @@
 
 typedef NS_ENUM(NSInteger, AFNFCInputType) {
   AFNFCInputTypeText = 0,
-  AFNFCInputTypeLink = 1
+  AFNFCInputTypeLink = 1,
+  AFNFCInputTypeHistoricalBytes = 2
 };
 
 @interface NFCMessageBuilder : NSObject

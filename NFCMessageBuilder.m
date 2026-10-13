@@ -39,12 +39,11 @@ static NSString *const AFNFCErrorDomain = @"com.nguyenvinh.fakenfc";
                                                 type:typeData
                                           identifier:[NSData data]
                                              payload:fullPayload];
-  } else {
+  } else if (type == AFNFCInputTypeLink) {
     // Chuẩn NDEF URI Record (Format 0x01 Well Known, Type 'U')
     // Xử lý link có ký tự có dấu / unicode (như tiếng Việt, ký tự đặc biệt)
     NSURL *url = [NSURL URLWithString:trimmed];
     if (!url || !url.scheme) {
-      // Encode URL nếu có ký tự có dấu trong path / query
       NSString *encoded = [trimmed stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
       url = [NSURL URLWithString:encoded];
     }
@@ -56,13 +55,8 @@ static NSString *const AFNFCErrorDomain = @"com.nguyenvinh.fakenfc";
       payload = [NFCNDEFPayload wellKnownTypeURIPayloadWithString:trimmed];
     }
 
-    // Nếu các phương thức mặc định vẫn chưa tạo được payload (do ký tự tiếng Việt đặc thù), tự build NDEF URI thô theo NFC Forum RTD URI
+    // Nếu các phương thức mặc định vẫn chưa tạo được payload, tự build NDEF URI thô theo NFC Forum RTD URI
     if (!payload) {
-      // Prefix 0x00: Không dùng prefix viết tắt
-      // Prefix 0x01: http://www.
-      // Prefix 0x02: https://www.
-      // Prefix 0x03: http://
-      // Prefix 0x04: https://
       uint8_t prefixCode = 0x00;
       NSString *subUri = trimmed;
       if ([trimmed hasPrefix:@"https://www."]) {
@@ -100,6 +94,18 @@ static NSString *const AFNFCErrorDomain = @"com.nguyenvinh.fakenfc";
                                  }];
       return nil;
     }
+  } else {
+    // AFNFCInputTypeHistoricalBytes:
+    // Tạo bản ghi NDEF MIME Type hoặc External Record mang thông tin Historical Bytes
+    // Format: NFCExternal hoặc Media (MIME)
+    NSData *typeData = [@"text/plain" dataUsingEncoding:NSUTF8StringEncoding];
+    NSString *cleanHex = [[trimmed stringByReplacingOccurrencesOfString:@":" withString:@""]
+                                   stringByReplacingOccurrencesOfString:@" " withString:@""];
+    NSData *payloadData = [cleanHex dataUsingEncoding:NSUTF8StringEncoding];
+    payload = [[NFCNDEFPayload alloc] initWithFormat:NFCTypeNameFormatMedia
+                                                type:typeData
+                                          identifier:[NSData data]
+                                             payload:payloadData];
   }
 
   if (!payload) {

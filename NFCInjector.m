@@ -25,6 +25,7 @@
   if (self) {
     _notifyToken = NOTIFY_TOKEN_INVALID;
     _internalLogBuffer = [NSMutableArray array];
+    _currentTagConfig = [NFCTagConfig defaultConfig];
     [self log:@"[INIT] Khởi động FakeNFC Injector..."];
     [self loadNearFieldPrivateFramework];
     [self setupSystemNFCNotificationListener];
@@ -106,10 +107,17 @@
 }
 
 - (void)armWithMessage:(NFCNDEFMessage *)message onSessionDetected:(NFCSessionDetectedBlock)block {
+  [self armWithMessage:message config:self.currentTagConfig onSessionDetected:block];
+}
+
+- (void)armWithMessage:(NFCNDEFMessage *)message config:(NFCTagConfig *)config onSessionDetected:(NFCSessionDetectedBlock)block {
   self.isArmed = YES;
   self.armedMessage = message;
+  if (config) {
+    self.currentTagConfig = [config copy];
+  }
   self.onSessionDetected = block;
-  [self log:@"[ARMED] ĐÃ BẬT CHẾ ĐỘ CHỜ TỰ ĐỘNG! Sẵn sàng bắt cửa sổ quét NFC..."];
+  [self log:@"[ARMED] ĐÃ BẬT CHẾ ĐỘ CHỜ TỰ ĐỘNG! Thẻ: %@ | Serial: %@", self.currentTagConfig.tagType, self.currentTagConfig.serialNumber];
 }
 
 - (void)disarm {
@@ -138,16 +146,21 @@
   }
 
   NFCNDEFMessage *msgToSend = self.armedMessage;
+  NFCTagConfig *cfgToSend = self.currentTagConfig;
   [self disarm];
 
-  [self injectMessage:msgToSend delay:0.3 error:nil];
+  [self injectMessage:msgToSend config:cfgToSend delay:0.3 error:nil];
 }
 
 - (BOOL)injectMessage:(NFCNDEFMessage *)message error:(NSError **)error {
-  return [self injectMessage:message delay:0.3 error:error];
+  return [self injectMessage:message config:self.currentTagConfig delay:0.3 error:error];
 }
 
 - (BOOL)injectMessage:(NFCNDEFMessage *)message delay:(NSTimeInterval)delaySeconds error:(NSError **)error {
+  return [self injectMessage:message config:self.currentTagConfig delay:delaySeconds error:error];
+}
+
+- (BOOL)injectMessage:(NFCNDEFMessage *)message config:(NFCTagConfig *)config delay:(NSTimeInterval)delaySeconds error:(NSError **)error {
   if (!message) {
     [self log:@"[ERROR] Bản ghi NDEF rỗng, không thể gửi!"];
     if (error) {
@@ -158,7 +171,11 @@
     return NO;
   }
 
-  [self log:@"[INJECT] Bắt đầu quá trình tiêm NFC (chờ %.1fs)...", delaySeconds];
+  NFCTagConfig *tagConfig = config ? [config copy] : (self.currentTagConfig ?: [NFCTagConfig defaultConfig]);
+  self.currentTagConfig = tagConfig;
+
+  [self log:@"[INJECT] Tiêm thẻ giả (delay: %.1fs) | Loại: %@ | UID: %@ | Writable: %@",
+            delaySeconds, tagConfig.tagType, tagConfig.serialNumber, tagConfig.isWritable ? @"CÓ" : @"KHÔNG"];
 
   // 1. Post notification
   notify_post("com.apple.nfcd.field.detected");
@@ -169,7 +186,6 @@
     id delegate = self.activeDelegate;
     NFCReaderSession *session = self.activeSession;
 
-    // Nếu delegate chưa có từ hook init, lấy từ property delegate của session
     if (!delegate && session) {
       @try {
         delegate = [session valueForKey:@"delegate"];
@@ -183,11 +199,11 @@
 
     [self log:@"[INJECT] Tìm thấy delegate: <%@: %p>", [delegate class], delegate];
 
-    // Tạo Mock Tag
-    FakeNDEFTag *fakeTag = [[FakeNDEFTag alloc] initWithMessage:message];
+    // Tạo Mock Tag với cấu hình tuỳ chỉnh sâu
+    FakeNDEFTag *fakeTag = [[FakeNDEFTag alloc] initWithMessage:message config:tagConfig];
     BOOL delivered = NO;
 
-    // Hỗ trợ trường hợp 1: NFCNDEFReaderSessionDelegate didDetectTags: (iOS 13+ NDEF Reader)
+    // Trường hợp 1: NFCNDEFReaderSessionDelegate didDetectTags:
     if ([delegate respondsToSelector:@selector(readerSession:didDetectTags:)]) {
       [self log:@"[INJECT] -> Gọi [delegate readerSession:didDetectTags:] với FakeNDEFTag!"];
       @try {
@@ -198,7 +214,7 @@
       }
     }
 
-    // Hỗ trợ trường hợp 2: NFCNDEFReaderSessionDelegate didDetectNDEFs: (Cổ điển)
+    // Trường hợp 2: NFCNDEFReaderSessionDelegate didDetectNDEFs:
     if (!delivered && [delegate respondsToSelector:@selector(readerSession:didDetectNDEFs:)]) {
       [self log:@"[INJECT] -> Gọi [delegate readerSession:didDetectNDEFs:] với message!"];
       @try {
@@ -209,7 +225,7 @@
       }
     }
 
-    // Hỗ trợ trường hợp 3: NFCTagReaderSessionDelegate tagReaderSession:didDetectTags: (NFCTools & Tag Readers)
+    // Trường hợp 3: NFCTagReaderSessionDelegate tagReaderSession:didDetectTags:
     SEL tagDetectSel = @selector(tagReaderSession:didDetectTags:);
     if (!delivered && [delegate respondsToSelector:tagDetectSel]) {
       [self log:@"[INJECT] -> Gọi [delegate tagReaderSession:didDetectTags:] với FakeNDEFTag!"];

@@ -3,6 +3,7 @@
 #import "NFCMessageBuilder.h"
 #import "FakeNFCFloatManager.h"
 #import "NFCTemplateManager.h"
+#import "NFCAdvancedConfigViewController.h"
 
 // Chế độ gửi NFC
 typedef NS_ENUM(NSInteger, FakeNFCSendMode) {
@@ -12,16 +13,21 @@ typedef NS_ENUM(NSInteger, FakeNFCSendMode) {
   FakeNFCSendModeAuto           // Tự động (chờ app mở NFC)
 };
 
+static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
+
 @interface FakeNFCViewController () <UITableViewDelegate, UITableViewDataSource>
 @property(nonatomic, strong) UISegmentedControl *typeControl;
 @property(nonatomic, strong) UITextView *inputView;
+@property(nonatomic, strong) UIButton *advancedConfigButton;
 @property(nonatomic, strong) UIButton *modeButton;
 @property(nonatomic, strong) UIButton *actionButton;
 @property(nonatomic, strong) UILabel *statusLabel;
+@property(nonatomic, strong) UILabel *tagInfoBadgeLabel;
 @property(nonatomic, strong) UITableView *templatesTableView;
 @property(nonatomic, strong) UITextView *logTextView;
 @property(nonatomic, assign) FakeNFCSendMode currentMode;
 @property(nonatomic, strong) NSMutableArray<NFCTemplateModel *> *templates;
+@property(nonatomic, strong) NFCTagConfig *currentTagConfig;
 @end
 
 @implementation FakeNFCViewController
@@ -38,12 +44,13 @@ typedef NS_ENUM(NSInteger, FakeNFCSendMode) {
                     object:nil];
 }
 
-static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
-
 - (void)viewDidLoad {
   [super viewDidLoad];
   self.view.backgroundColor = [UIColor systemBackgroundColor];
   self.title = @"Giả Lập NFC";
+
+  // Cấu hình thẻ hiện tại (mặc định)
+  self.currentTagConfig = [NFCInjector sharedInstance].currentTagConfig ?: [NFCTagConfig defaultConfig];
 
   // Khôi phục chế độ đã lưu
   NSInteger savedMode = [[NSUserDefaults standardUserDefaults] integerForKey:kFakeNFCSendModeKey];
@@ -62,8 +69,8 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     initWithTitle:@"Lưu Mẫu" style:UIBarButtonItemStyleDone
     target:self action:@selector(saveCurrentAsTemplateTapped)];
 
-  // 1. Phân loại Text / Link
-  self.typeControl = [[UISegmentedControl alloc] initWithItems:@[ @"Văn bản (Text)", @"Đường dẫn (Link)" ]];
+  // 1. Phân loại Text / Link / Historical Bytes (dùng chung 1 loại phân loại)
+  self.typeControl = [[UISegmentedControl alloc] initWithItems:@[ @"Văn bản", @"Đường dẫn", @"Historical Bytes" ]];
   self.typeControl.selectedSegmentIndex = 1;
   [self.typeControl addTarget:self action:@selector(typeChanged:) forControlEvents:UIControlEventValueChanged];
 
@@ -75,7 +82,27 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   self.inputView.layer.cornerRadius = 8;
   self.inputView.text = @"https://genshin-impact.fandom.com/vi/wiki/Nhân_Vật";
 
-  // 3. Menu chọn chế độ gửi
+  // 3. Nút Tuỳ Chỉnh Chuyên Sâu & Tag Badge info
+  self.advancedConfigButton = [UIButton buttonWithType:UIButtonTypeSystem];
+  [self.advancedConfigButton setTitle:@"Tuỳ chỉnh chuyên sâu thẻ" forState:UIControlStateNormal];
+  self.advancedConfigButton.titleLabel.font = [UIFont boldSystemFontOfSize:12];
+  [self.advancedConfigButton setTitleColor:[UIColor systemIndigoColor] forState:UIControlStateNormal];
+  self.advancedConfigButton.backgroundColor = [UIColor secondarySystemFillColor];
+  self.advancedConfigButton.layer.cornerRadius = 6;
+  [self.advancedConfigButton addTarget:self action:@selector(openAdvancedConfigTapped) forControlEvents:UIControlEventTouchUpInside];
+
+  self.tagInfoBadgeLabel = [[UILabel alloc] init];
+  self.tagInfoBadgeLabel.font = [UIFont systemFontOfSize:11];
+  self.tagInfoBadgeLabel.textColor = [UIColor secondaryLabelColor];
+  self.tagInfoBadgeLabel.textAlignment = NSTextAlignmentRight;
+  [self updateTagInfoBadge];
+
+  UIStackView *configRow = [[UIStackView alloc] initWithArrangedSubviews:@[self.advancedConfigButton, self.tagInfoBadgeLabel]];
+  configRow.axis = UILayoutConstraintAxisHorizontal;
+  configRow.spacing = 8;
+  configRow.distribution = UIStackViewDistributionFillProportionally;
+
+  // 4. Menu chọn chế độ gửi & Nút Hành Động Gửi
   self.modeButton = [UIButton buttonWithType:UIButtonTypeSystem];
   self.modeButton.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
   self.modeButton.backgroundColor = [UIColor secondarySystemFillColor];
@@ -83,7 +110,6 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   [self updateModeButtonTitle];
   [self setupModeButtonMenu];
 
-  // 4. Nút Hành Động Gửi
   self.actionButton = [UIButton buttonWithType:UIButtonTypeSystem];
   self.actionButton.titleLabel.font = [UIFont boldSystemFontOfSize:14];
   self.actionButton.backgroundColor = [UIColor systemBlueColor];
@@ -111,12 +137,7 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   templatesHeaderTitle.font = [UIFont boldSystemFontOfSize:11];
   templatesHeaderTitle.textColor = [UIColor secondaryLabelColor];
 
-  UIButton *addManualTemplateBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-  [addManualTemplateBtn setTitle:@"Thêm mới" forState:UIControlStateNormal];
-  addManualTemplateBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
-  [addManualTemplateBtn addTarget:self action:@selector(addNewTemplateDialog) forControlEvents:UIControlEventTouchUpInside];
-
-  UIStackView *templatesHeader = [[UIStackView alloc] initWithArrangedSubviews:@[templatesHeaderTitle, addManualTemplateBtn]];
+  UIStackView *templatesHeader = [[UIStackView alloc] initWithArrangedSubviews:@[templatesHeaderTitle]];
   templatesHeader.axis = UILayoutConstraintAxisHorizontal;
   templatesHeader.distribution = UIStackViewDistributionEqualSpacing;
 
@@ -157,6 +178,7 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   UIStackView *mainStack = [[UIStackView alloc] initWithArrangedSubviews:@[
     self.typeControl,
     self.inputView,
+    configRow,
     controlRow,
     self.statusLabel,
     templatesHeader,
@@ -175,15 +197,16 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     [mainStack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:6],
     [mainStack.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-6],
     [self.typeControl.heightAnchor constraintEqualToConstant:30],
-    [self.inputView.heightAnchor constraintEqualToConstant:50],
-    [controlRow.heightAnchor constraintEqualToConstant:38],
+    [self.inputView.heightAnchor constraintEqualToConstant:48],
+    [configRow.heightAnchor constraintEqualToConstant:28],
+    [self.advancedConfigButton.widthAnchor constraintEqualToConstant:180],
+    [controlRow.heightAnchor constraintEqualToConstant:36],
     [self.modeButton.widthAnchor constraintEqualToConstant:150],
-    [self.templatesTableView.heightAnchor constraintEqualToConstant:90],
+    [self.templatesTableView.heightAnchor constraintEqualToConstant:86],
   ]];
 
   [self reloadTemplates];
 
-  // Tự động cuộn log xuống dòng mới nhất
   if (self.logTextView.text.length > 0) {
     [self.logTextView scrollRangeToVisible:NSMakeRange(self.logTextView.text.length - 1, 1)];
   }
@@ -198,7 +221,6 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     });
   };
 
-  // Nếu đang armed từ trước
   if ([NFCInjector sharedInstance].isArmed) {
     self.currentMode = FakeNFCSendModeAuto;
     [self updateModeButtonTitle];
@@ -206,6 +228,44 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     self.actionButton.backgroundColor = [UIColor systemOrangeColor];
     self.statusLabel.text = @"Đang chờ ứng dụng quét NFC...";
   }
+}
+
+- (void)updateTagInfoBadge {
+  NSString *typeStr = self.currentTagConfig.tagType ?: @"Unknown";
+  NSString *uidStr = self.currentTagConfig.serialNumber ?: @"Unknown";
+  NSString *wStr = self.currentTagConfig.isWritable ? @"RW" : @"RO";
+  self.tagInfoBadgeLabel.text = [NSString stringWithFormat:@"%@ | UID:%@ | %@", typeStr, uidStr, wStr];
+}
+
+#pragma mark - Tuỳ Chỉnh Chuyên Sâu
+
+- (void)openAdvancedConfigTapped {
+  __weak typeof(self) weakSelf = self;
+  NSInteger currentDataType = self.typeControl.selectedSegmentIndex;
+  NSString *currentContent  = self.inputView.text ?: @"";
+
+  NFCAdvancedConfigViewController *vc = [[NFCAdvancedConfigViewController alloc]
+      initWithConfig:self.currentTagConfig
+             content:currentContent
+            dataType:currentDataType
+              onSave:^(NFCTagConfig *updatedConfig, NSString *content, NSInteger dataType) {
+    // Đồng bộ cấu hình phần cứng
+    weakSelf.currentTagConfig = updatedConfig;
+    [NFCInjector sharedInstance].currentTagConfig = updatedConfig;
+    [weakSelf updateTagInfoBadge];
+
+    // Đồng bộ loại dữ liệu và nội dung về màn hình chính
+    weakSelf.typeControl.selectedSegmentIndex = dataType;
+    if (content.length > 0) {
+      weakSelf.inputView.text = content;
+    }
+
+    weakSelf.statusLabel.text = [NSString stringWithFormat:@"Đã cập nhật: %@ | %@",
+        updatedConfig.tagType,
+        dataType == 0 ? @"Văn bản" : dataType == 1 ? @"Đường dẫn" : @"Historical Bytes"];
+    weakSelf.statusLabel.textColor = [UIColor systemBlueColor];
+  }];
+  [self.navigationController pushViewController:vc animated:YES];
 }
 
 #pragma mark - Chế độ Gửi & Menu
@@ -305,7 +365,6 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
 
 - (void)actionButtonTapped {
   if ([NFCInjector sharedInstance].isArmed) {
-    // Đang chờ -> Huỷ chờ
     [[NFCInjector sharedInstance] disarm];
     [self updateActionButtonTitle];
     self.statusLabel.text = @"Đã huỷ chế độ chờ tự động.";
@@ -331,13 +390,19 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
 
 - (void)sendWithDelay:(NSTimeInterval)seconds {
   NSError *error = nil;
-  AFNFCInputType type = (self.typeControl.selectedSegmentIndex == 0) ? AFNFCInputTypeText : AFNFCInputTypeLink;
+  AFNFCInputType type = (AFNFCInputType)self.typeControl.selectedSegmentIndex;
   NFCNDEFMessage *message = [NFCMessageBuilder messageForType:type value:self.inputView.text error:&error];
 
   if (!message) {
     self.statusLabel.text = error.localizedDescription ?: @"Dữ liệu không hợp lệ!";
     self.statusLabel.textColor = [UIColor systemRedColor];
     return;
+  }
+
+  // Nếu là Historical Bytes: ép isWritable = NO
+  if (type == AFNFCInputTypeHistoricalBytes) {
+    self.currentTagConfig.isWritable = NO;
+    self.currentTagConfig.historicalBytesHex = self.inputView.text;
   }
 
   if (seconds > 0) {
@@ -368,7 +433,7 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     self.statusLabel.textColor = [UIColor systemGreenColor];
   }
 
-  [[NFCInjector sharedInstance] injectMessage:message delay:seconds error:&error];
+  [[NFCInjector sharedInstance] injectMessage:message config:self.currentTagConfig delay:seconds error:&error];
 
   if (seconds > 0) {
     [self dismissSelf];
@@ -377,7 +442,7 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
 
 - (void)armAutoNFC {
   NSError *error = nil;
-  AFNFCInputType type = (self.typeControl.selectedSegmentIndex == 0) ? AFNFCInputTypeText : AFNFCInputTypeLink;
+  AFNFCInputType type = (AFNFCInputType)self.typeControl.selectedSegmentIndex;
   NFCNDEFMessage *message = [NFCMessageBuilder messageForType:type value:self.inputView.text error:&error];
 
   if (!message) {
@@ -386,8 +451,13 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     return;
   }
 
+  if (type == AFNFCInputTypeHistoricalBytes) {
+    self.currentTagConfig.isWritable = NO;
+    self.currentTagConfig.historicalBytesHex = self.inputView.text;
+  }
+
   __weak typeof(self) weakSelf = self;
-  [[NFCInjector sharedInstance] armWithMessage:message onSessionDetected:^{
+  [[NFCInjector sharedInstance] armWithMessage:message config:self.currentTagConfig onSessionDetected:^{
     dispatch_async(dispatch_get_main_queue(), ^{
       weakSelf.statusLabel.text = @"ĐÃ TIÊM NFC! App vừa quét NFC đã nhận dữ liệu.";
       weakSelf.statusLabel.textColor = [UIColor systemGreenColor];
@@ -413,6 +483,7 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
 }
 
 // Bấm nút "Lưu Mẫu" ở góc trên bên phải
+// Chỉ hỏi tên — nội dung & loại lấy từ ô đang nhập, config luôn dùng mặc định
 - (void)saveCurrentAsTemplateTapped {
   NSString *currentVal = [self.inputView.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
   if (currentVal.length == 0) {
@@ -422,22 +493,32 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   }
 
   NSInteger curType = self.typeControl.selectedSegmentIndex;
-  NSString *defaultTitle = (curType == 1) ? @"Đường dẫn mới" : @"Văn bản mới";
+  NSString *defaultTitle = @"Mẫu mới";
+  if (curType == 0) defaultTitle = @"Văn bản mới";
+  else if (curType == 1) defaultTitle = @"Đường dẫn mới";
+  else defaultTitle = @"Historical Bytes mới";
 
-  UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Lưu Mẫu Nhanh"
-                                                                 message:@"Nhập tên đại diện cho nội dung đang có ở khung nhập:"
+  UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Lưu Mẫu"
+                                                                 message:nil
                                                           preferredStyle:UIAlertControllerStyleAlert];
-
-  [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-    textField.placeholder = @"Tên mẫu (ví dụ: Trang chủ Wiki, Thẻ ID...)";
-    textField.text = defaultTitle;
+  [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+    tf.placeholder = @"Tên mẫu";
+    tf.text = defaultTitle;
+    tf.clearButtonMode = UITextFieldViewModeWhileEditing;
   }];
 
-  UIAlertAction *saveAction = [UIAlertAction actionWithTitle:@"Lưu Lại" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-    NSString *title = alert.textFields[0].text;
+  UIAlertAction *saveAction = [UIAlertAction actionWithTitle:@"Lưu" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    NSString *title = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (title.length == 0) title = defaultTitle;
 
-    NFCTemplateModel *newModel = [[NFCTemplateModel alloc] initWithTitle:title value:currentVal type:curType];
+    // Luôn dùng config mặc định khi lưu từ màn hình cơ bản
+    NFCTagConfig *cfg = [NFCTagConfig defaultConfig];
+    if (curType == 2) {
+      cfg.isWritable = NO;
+      cfg.historicalBytesHex = currentVal;
+    }
+
+    NFCTemplateModel *newModel = [[NFCTemplateModel alloc] initWithTitle:title value:currentVal type:curType tagConfig:cfg];
     [[NFCTemplateManager sharedManager] addTemplate:newModel];
     [self reloadTemplates];
 
@@ -445,72 +526,11 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
     self.statusLabel.textColor = [UIColor systemGreenColor];
   }];
 
-  UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Huỷ" style:UIAlertActionStyleCancel handler:nil];
-
   [alert addAction:saveAction];
-  [alert addAction:cancelAction];
-  [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)addNewTemplateDialog {
-  UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thêm Mẫu Mới" message:nil preferredStyle:UIAlertControllerStyleAlert];
-
-  [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-    textField.placeholder = @"Tên mẫu";
-  }];
-  [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-    textField.placeholder = @"Nội dung (Link hoặc Văn bản)";
-  }];
-
-  __block NSInteger selType = 1; // Mặc định link
-  UIAlertAction *typeToggle = [UIAlertAction actionWithTitle:@"Loại: Link (Chạm để đổi sang Text)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-    selType = (selType == 1) ? 0 : 1;
-    // mở lại alert với type mới
-    NSString *t = alert.textFields[0].text;
-    NSString *v = alert.textFields[1].text;
-    [self showManualAddWithType:selType title:t value:v];
-  }];
-
-  UIAlertAction *saveAct = [UIAlertAction actionWithTitle:@"Lưu" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-    NSString *t = alert.textFields[0].text;
-    NSString *v = alert.textFields[1].text;
-    if (t.length == 0) t = @"Mẫu mới";
-    NFCTemplateModel *m = [[NFCTemplateModel alloc] initWithTitle:t value:v type:selType];
-    [[NFCTemplateManager sharedManager] addTemplate:m];
-    [self reloadTemplates];
-  }];
-
-  UIAlertAction *cancelAct = [UIAlertAction actionWithTitle:@"Huỷ" style:UIAlertActionStyleCancel handler:nil];
-
-  [alert addAction:typeToggle];
-  [alert addAction:saveAct];
-  [alert addAction:cancelAct];
-  [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)showManualAddWithType:(NSInteger)type title:(NSString *)t value:(NSString *)v {
-  UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thêm Mẫu Mới" message:nil preferredStyle:UIAlertControllerStyleAlert];
-  [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"Tên mẫu"; tf.text = t; }];
-  [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"Nội dung"; tf.text = v; }];
-
-  NSString *typeStr = (type == 0) ? @"Loại: Text (Chạm để đổi sang Link)" : @"Loại: Link (Chạm để đổi sang Text)";
-  UIAlertAction *typeToggle = [UIAlertAction actionWithTitle:typeStr style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-    [self showManualAddWithType:(type == 0 ? 1 : 0) title:alert.textFields[0].text value:alert.textFields[1].text];
-  }];
-
-  UIAlertAction *saveAct = [UIAlertAction actionWithTitle:@"Lưu" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-    NSString *title = alert.textFields[0].text ?: @"Mẫu mới";
-    NSString *val = alert.textFields[1].text ?: @"";
-    NFCTemplateModel *m = [[NFCTemplateModel alloc] initWithTitle:title value:val type:type];
-    [[NFCTemplateManager sharedManager] addTemplate:m];
-    [self reloadTemplates];
-  }];
-
-  [alert addAction:typeToggle];
-  [alert addAction:saveAct];
   [alert addAction:[UIAlertAction actionWithTitle:@"Huỷ" style:UIAlertActionStyleCancel handler:nil]];
   [self presentViewController:alert animated:YES completion:nil];
 }
+
 
 #pragma mark - UITableViewDataSource & Delegate
 
@@ -523,13 +543,16 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellId];
   if (!cell) {
     cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellId];
-    cell.textLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    cell.textLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     cell.detailTextLabel.font = [UIFont systemFontOfSize:11];
     cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
   }
 
   NFCTemplateModel *model = self.templates[indexPath.row];
-  NSString *typeBadge = (model.type == 0) ? @"[Text]" : @"[Link]";
+  NSString *typeBadge = @"[Link]";
+  if (model.type == 0) typeBadge = @"[Text]";
+  else if (model.type == 2) typeBadge = @"[Hist]";
+
   cell.textLabel.text = [NSString stringWithFormat:@"%@ %@", typeBadge, model.title];
   cell.detailTextLabel.text = model.value;
 
@@ -540,10 +563,26 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
   [tableView deselectRowAtIndexPath:indexPath animated:YES];
   NFCTemplateModel *model = self.templates[indexPath.row];
 
-  // Áp dụng mẫu đã chọn vào giao diện nhập
+  // Nạp loại dữ liệu & giá trị
   self.typeControl.selectedSegmentIndex = model.type;
   self.inputView.text = model.value;
-  self.statusLabel.text = [NSString stringWithFormat:@"Đã nạp mẫu: %@", model.title];
+
+  // Nạp cấu hình phần cứng tuỳ chỉnh của mẫu
+  if (model.tagConfig) {
+    self.currentTagConfig = [model.tagConfig copy];
+    [NFCInjector sharedInstance].currentTagConfig = self.currentTagConfig;
+  } else {
+    // Mẫu cũ chỉ có thông tin cơ bản -> dùng giá trị mặc định
+    self.currentTagConfig = [NFCTagConfig defaultConfig];
+    if (model.type == 2) {
+      self.currentTagConfig.isWritable = NO;
+      self.currentTagConfig.historicalBytesHex = model.value;
+    }
+    [NFCInjector sharedInstance].currentTagConfig = self.currentTagConfig;
+  }
+  [self updateTagInfoBadge];
+
+  self.statusLabel.text = [NSString stringWithFormat:@"Đã nạp mẫu: %@ (UID: %@)", model.title, self.currentTagConfig.serialNumber];
   self.statusLabel.textColor = [UIColor systemBlueColor];
 }
 
@@ -565,13 +604,19 @@ static NSString *const kFakeNFCSendModeKey = @"FakeNFC_SavedSendMode";
 
 - (void)typeChanged:(UISegmentedControl *)sender {
   if (sender.selectedSegmentIndex == 0) {
-    if ([self.inputView.text containsString:@"genshin-impact.fandom.com"] || [self.inputView.text hasPrefix:@"http"]) {
+    if ([self.inputView.text containsString:@"genshin-impact.fandom.com"] || [self.inputView.text hasPrefix:@"http"] || [self.inputView.text containsString:@":"]) {
       self.inputView.text = @"Xin chào thẻ NFC tiếng Việt";
     }
-  } else {
-    if ([self.inputView.text isEqualToString:@"Xin chào thẻ NFC tiếng Việt"]) {
+  } else if (sender.selectedSegmentIndex == 1) {
+    if ([self.inputView.text isEqualToString:@"Xin chào thẻ NFC tiếng Việt"] || [self.inputView.text containsString:@":"]) {
       self.inputView.text = @"https://genshin-impact.fandom.com/vi/wiki/Nhân_Vật";
     }
+  } else {
+    // Historical Bytes
+    self.inputView.text = @"53:54:4D:73:69:6F";
+    self.currentTagConfig.isWritable = NO;
+    self.currentTagConfig.historicalBytesHex = self.inputView.text;
+    [self updateTagInfoBadge];
   }
 }
 
