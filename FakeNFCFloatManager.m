@@ -131,18 +131,10 @@ static FakeNFCFloatManager *gFloatManager = nil;
     self.floatButton.layer.shadowOpacity = 0.4;
     self.floatButton.layer.shadowOffset  = CGSizeMake(0, 3);
 
-    // Icon NFC
-    UILabel *icon = [[UILabel alloc] initWithFrame:CGRectMake(0, 6, btnSize, 28)];
-    icon.text = @"📡";
-    icon.font = [UIFont systemFontOfSize:21];
-    icon.textAlignment = NSTextAlignmentCenter;
-    icon.userInteractionEnabled = NO;
-    [self.floatButton addSubview:icon];
-
-    // State label
-    self.stateLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 32, btnSize, 18)];
-    self.stateLabel.text = @"FAKE";
-    self.stateLabel.font = [UIFont boldSystemFontOfSize:9];
+    // Label hiển thị trạng thái chữ (không dùng icon)
+    self.stateLabel = [[UILabel alloc] initWithFrame:self.floatButton.bounds];
+    self.stateLabel.text = @"NFC";
+    self.stateLabel.font = [UIFont boldSystemFontOfSize:13];
     self.stateLabel.textColor = [UIColor whiteColor];
     self.stateLabel.textAlignment = NSTextAlignmentCenter;
     self.stateLabel.userInteractionEnabled = NO;
@@ -226,7 +218,7 @@ static FakeNFCFloatManager *gFloatManager = nil;
 
         if (resetAfterDelay) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self setState:FakeNFCFloatStateIdle label:@"FAKE"];
+                [self setState:FakeNFCFloatStateIdle label:@"NFC"];
             });
         }
     });

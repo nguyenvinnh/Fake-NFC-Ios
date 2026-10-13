@@ -68,7 +68,7 @@
 - (NSString *)allLogsString {
   @synchronized(self.internalLogBuffer) {
     if (self.internalLogBuffer.count == 0) {
-      return @"--- Chưa có log nào ---\n";
+      return @"--- Chưa có nhật ký nào ---\n";
     }
     return [[self.internalLogBuffer componentsJoinedByString:@"\n"] stringByAppendingString:@"\n"];
   }
@@ -83,7 +83,7 @@
 - (void)loadNearFieldPrivateFramework {
   void *handle = dlopen("/System/Library/PrivateFrameworks/NearField.framework/NearField", RTLD_NOW);
   if (handle) {
-    [self log:@"[SYSTEM] Đã load NearField.framework!"];
+    [self log:@"[SYSTEM] Đã tải NearField.framework thành công!"];
   }
 }
 
@@ -109,20 +109,20 @@
   self.isArmed = YES;
   self.armedMessage = message;
   self.onSessionDetected = block;
-  [self log:@"[ARMED] ĐÃ BẬT CHẾ ĐỘ CHỜ TỰ ĐỘNG! Sẵn sàng bắt cửa sổ NFC..."];
+  [self log:@"[ARMED] ĐÃ BẬT CHẾ ĐỘ CHỜ TỰ ĐỘNG! Sẵn sàng bắt cửa sổ quét NFC..."];
 }
 
 - (void)disarm {
   self.isArmed = NO;
   self.armedMessage = nil;
   self.onSessionDetected = nil;
-  [self log:@"[ARMED] Đã hủy chế độ chờ tự động."];
+  [self log:@"[ARMED] Đã huỷ chế độ chờ tự động."];
 }
 
 - (void)notifySessionStarted:(NFCReaderSession *)session delegate:(id)delegate {
   if (session) self.activeSession = session;
   if (delegate) self.activeDelegate = delegate;
-  [self log:@"[SESSION] Đã lưu active session: %@ | delegate: %@", session, delegate];
+  [self log:@"[SESSION] Đã lưu phiên quét: <%@: %p> | delegate: <%@: %p>", [session class], session, [delegate class], delegate];
   [self handleSystemNFCSessionStarted];
 }
 
@@ -131,7 +131,7 @@
     return;
   }
 
-  [self log:@"[TRIGGER] >>> BẮT ĐƯỢC CỬA SỔ QUÉT NFC! BẮT ĐẦU ĐẨY DỮ LIỆU FAKE <<<"];
+  [self log:@"[TRIGGER] >>> BẮT ĐƯỢC CỬA SỔ QUÉT NFC! BẮT ĐẦU ĐẨY DỮ LIỆU GIẢ <<<"];
   
   if (self.onSessionDetected) {
     self.onSessionDetected();
@@ -149,7 +149,7 @@
 
 - (BOOL)injectMessage:(NFCNDEFMessage *)message delay:(NSTimeInterval)delaySeconds error:(NSError **)error {
   if (!message) {
-    [self log:@"[ERROR] Message NDEF bị nil, không thể gửi!"];
+    [self log:@"[ERROR] Bản ghi NDEF rỗng, không thể gửi!"];
     if (error) {
       *error = [NSError errorWithDomain:@"com.nguyenvinh.fakenfc"
                                    code:100
@@ -158,7 +158,7 @@
     return NO;
   }
 
-  [self log:@"[INJECT] Bắt đầu quá trình inject (delay: %.1fs)...", delaySeconds];
+  [self log:@"[INJECT] Bắt đầu quá trình tiêm NFC (chờ %.1fs)...", delaySeconds];
 
   // 1. Post notification
   notify_post("com.apple.nfcd.field.detected");
@@ -177,7 +177,7 @@
     }
 
     if (!delegate) {
-      [self log:@"[INJECT] ⚠️ Chưa bắt được delegate của app mục tiêu. Hãy mở app và bấm Scan/Read trước!"];
+      [self log:@"[INJECT] [CẢNH BÁO] Chưa bắt được delegate của ứng dụng mục tiêu. Hãy mở ứng dụng và bấm Scan/Read trước!"];
       return;
     }
 
@@ -223,9 +223,9 @@
     }
 
     if (delivered) {
-      [self log:@"[INJECT] ✅ ĐÃ GỬI DỮ LIỆU FAKE THÀNH CÔNG VÀO APP MỤC TIÊU!"];
+      [self log:@"[INJECT] [THÀNH CÔNG] ĐÃ GỬI DỮ LIỆU FAKE THÀNH CÔNG VÀO ỨNG DỤNG MỤC TIÊU!"];
     } else {
-      [self log:@"[INJECT] ❌ Delegate không hỗ trợ các selector phát hiện tag/NDEF đã biết."];
+      [self log:@"[INJECT] [LỖI] Delegate không hỗ trợ các phương thức nhận thẻ/NDEF đã biết."];
     }
 
     [[NSNotificationCenter defaultCenter] postNotificationName:@"FakeNFCDidInjectMessageNotification"
