@@ -1,6 +1,6 @@
 # Fake-NFC-iOS
 
-Dự án tinh chỉnh (Tweak/Dylib) hỗ trợ giả lập dữ liệu NFC (NDEF Payload, UID thẻ) trực tiếp vào các ứng dụng quét NFC trên iOS (hỗ trợ cả các ứng dụng đọc thẻ như NFC Tools).
+Dự án tinh chỉnh (Tweak/Dylib) hỗ trợ giả lập dữ liệu NFC (NDEF Payload, UID thẻ) trực tiếp vào các ứng dụng quét NFC trên iOS (dự án này được thử nghiệm trên ứng dụng NFC Tool).
 
 ## Các tính năng nổi bật
 
