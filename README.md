@@ -31,7 +31,7 @@ Dự án tinh chỉnh (Tweak/Dylib) hỗ trợ giả lập dữ liệu NFC (NDEF
 * Dự án này được tạo ra **chỉ nhằm mục đích nghiên cứu bảo mật, học tập cách hoạt động của Objective-C Runtime, cơ chế Hooking trong iOS (Theos/Logos)** và tìm hiểu cách các ứng dụng xử lý dữ liệu như thế nào
 * Không khuyến khích hoặc cổ xuý việc sử dụng tweak này để gian lận, lừa đảo, hoặc vi phạm điều khoản sử dụng của bất kỳ bên thứ ba nào.
 
-## 📜 Điều Khoản Sử Dụng Mã Nguồn (License & Usage)
+## Điều Khoản Sử Dụng Mã Nguồn (License & Usage)
 * Chia sẻ miễn phí: Mã nguồn của dự án này được chia sẻ hoàn toàn miễn phí phục vụ mục đích học tập và nghiên cứu cá nhân.
 
 * Yêu cầu xin phép: Nếu bạn có ý định sử dụng, tích hợp hoặc tham khảo một phần hay toàn bộ mã nguồn này vào bất kỳ dự án nào khác (bao gồm cả dự án thương mại/có lợi nhuận lẫn phi lợi nhuận), bạn bắt buộc phải có sự đồng ý/cho phép bằng văn bản từ tác giả trước khi thực hiện.
