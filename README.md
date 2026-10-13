@@ -25,3 +25,18 @@ Dự án tinh chỉnh (Tweak/Dylib) hỗ trợ giả lập dữ liệu NFC (NDEF
 4. **Kích hoạt Callback trả dữ liệu**:
    - Dylib gọi thẳng vào delegate của ứng dụng mục tiêu qua các hàm `tagReaderSession:didDetectTags:` hoặc `readerSession:didDetectNDEFs:`.
    - Khi đó, ứng dụng mục tiêu đọc dữ liệu trực tiếp từ thẻ giả lập và hiển thị kết quả giống hệt như khi quét một thẻ NFC thật ở mặt lưng máy.
+
+##  Mục Đích Nghiên Cứu & Học Tập
+
+* Dự án này được tạo ra **chỉ nhằm mục đích nghiên cứu bảo mật, học tập cách hoạt động của Objective-C Runtime, cơ chế Hooking trong iOS (Theos/Logos)** và tìm hiểu cách các ứng dụng xử lý dữ liệu định vị (Location Services).
+* Không khuyến khích hoặc cổ suyến việc sử dụng tweak này để gian lận, lừa đảo, hoặc vi phạm điều khoản sử dụng của bất kỳ bên thứ ba nào.
+
+## 📜 Điều Khoản Sử Dụng Mã Nguồn (License & Usage)
+* Chia sẻ miễn phí: Mã nguồn của dự án này được chia sẻ hoàn toàn miễn phí phục vụ mục đích học tập và nghiên cứu cá nhân.
+
+* Yêu cầu xin phép: Nếu bạn có ý định sử dụng, tích hợp hoặc tham khảo một phần hay toàn bộ mã nguồn này vào bất kỳ dự án nào khác (bao gồm cả dự án thương mại/có lợi nhuận lẫn phi lợi nhuận), bạn bắt buộc phải có sự đồng ý/cho phép bằng văn bản từ tác giả trước khi thực hiện.
+
+##  Tuyên Bố Trách Nhiệm 
+
+* **Tự chịu trách nhiệm:** Người sử dụng tự chịu hoàn toàn mọi rủi ro, trách nhiệm pháp lý hoặc các hình thức xử phạt (như khóa tài khoản tạm thời/vĩnh viễn) từ nhà phát hành ứng dụng mục tiêu khi quyết định sử dụng dự án này.
+* **Không bảo đảm:** Tác giả không chịu bất kỳ trách nhiệm nào đối với bất kỳ thiệt hại trực tiếp hoặc gián tiếp nào phát sinh từ việc sử dụng, triển khai hoặc lạm dụng mã nguồn từ dự án này.
